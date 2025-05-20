@@ -148,7 +148,7 @@ plot2 <- DimPlot(Merged_NML, reduction ="umap", group.by = "orig.ident")
 plot1 + plot2
 
 
-#### NA PICCHI NA PAITHYAM######
+#### CCAIntegration######
 
 saveRDS(Merged_IPF, file = "./Merged_IPF.rds")
 temp <- Merged_IPF
