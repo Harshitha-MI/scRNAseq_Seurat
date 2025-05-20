@@ -44,9 +44,9 @@ Merged_NML<- subset(Merged_NML, subset = nFeature_RNA > 500 & nFeature_RNA < 350
 # view the data distribution again using violin plot
 
 VlnPlot(Merged_NML, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
 saveRDS(object = Merged_NML, file = "./Merged_NML.RDS")
 
-Merged_NML <- readRDS("./Merged_NML.RDS")
 # Normalize the data
 
 Merged_NML_QC <- NormalizeData(Merged_NML, normalization.method = "LogNormalize", scale.factor = 10000)
@@ -79,7 +79,7 @@ View (Merged_NML_QC[["RNA"]]$scale.data)
 #all.genes <- rownames(Merged_NML_QC)
 #Merged_NML_QC <- ScaleData(Merged_NML_QC, features = all.genes)
 # Done with standrad pre-processing workfolw
-#DImentioanlity reduction
+#Dimentioanlity reduction
 # Principle component analysis: propcess of computing prinicple component, it's a linear dimentionality reduction
 #technique. It projects each data point onto first few first few PC.
 # By default it runs firts 50 PC
@@ -93,9 +93,9 @@ DimPlot(Merged_NML_QC, reduction = "pca", dim = c(2,3))
 
 DimHeatmap(Merged_NML_QC, dims = 1, cells = 500, nfeatures = 30, balanced = TRUE)
 
-# Two ways to determine the dimentionality of teh data set:
+# Two ways to determine the dimentionality of the data set:
 # Jackstraw function and Elbow Plot function
-#Elbow lot to identify pc dims with significant variance
+#Elbow plot to identify pc dims with significant variance
 
 ElbowPlot(Merged_NML_QC)
 
@@ -148,27 +148,3 @@ plot2 <- DimPlot(Merged_NML, reduction ="umap", group.by = "orig.ident")
 plot1 + plot2
 
 
-#### CCAIntegration######
-
-saveRDS(Merged_IPF, file = "./Merged_IPF.rds")
-temp <- Merged_IPF
-temp <- IntegrateLayers(object = temp, method = CCAIntegration, orig.reduction = "pca", new.reduction = "integrated.cca",
-                        verbose = FALSE)
-temp[["RNA"]] <- JoinLayers(temp[["RNA"]])
-
-temp <- FindNeighbors(temp, reduction = "integrated.cca", dims = 1:20)
-temp <- FindClusters(temp, resolution = 0.3)
-temp <- RunUMAP(temp, dims = 1:20, reduction = "integrated.cca", reduction.name = "umap.cca")
-DimPlot(temp, reduction = "umap", group.by = "orig.ident")
-Merged_IPF_ori<- readRDS("./Merged_IPF.rds")
-temp<- readRDS("../Merged_IPF")
-plot1<- DimPlot(Merged_IPF_ori, reduction ="umap", group.by = "orig.ident")
-plot2<- DimPlot(temp, reduction ="umap", group.by = "orig.ident")
-plot1 + plot2
-
-Merged_IPF <- readRDS("./Merged_IPF.rds")
-View(Merged_IPF@meta.data)
-Merged_IPF[["RNA"]] <- split (Merged_IPF[["RNA"]], f = Merged_IPF$orig.ident)
-# Cluster biomarkers
-cluster2.markers <- FindMarkers(Merged_IPF, ident.1 = 2)
-head(cluster2.markers, n = 5)
