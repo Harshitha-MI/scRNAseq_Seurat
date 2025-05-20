@@ -1,0 +1,293 @@
+---
+title: "Single-cell RNAseq analysis on one sample using Seurat"
+author: "Harshitha"
+output: html_document
+date: "2025-04-21"
+---
+
+
+Trail 1:Initailly when I tried to run Homoney integration after runing pca on indiviudal samples and then merged the samples it failed.
+Trail2: I will merge the samples after findvariables step and then perform scaling and pca and then run harmony.
+Trail3: Merge the sample datasets before performing any steps of QC to save time and computational power
+trail4: it does not make any sense to plot the viloin plot with two samples in one plot. so we are going back, removing the merged datstet perfrom the QC with individual samples and then merging and then going for the data normalization step (downstream analysis)
+
+
+``` {r}
+library(dplyr)
+#library(Matrix)
+library(Seurat)
+library(patchwork)
+```
+
+Load the data: 
+Rename the file names to barcodes, features and matrix as Read10X does not recognise other file name.
+
+``` {r}
+sam1 <- Read10X("~/Documents/Drive G/Personal Project/sc_RNAseq tutorial/sample/sample_1")
+sam2 <- Read10X("~/Documents/Drive G/Personal Project/sc_RNAseq tutorial/sample/sample_2")
+```
+
+Convert the files into seurat objects
+
+```{r}
+sam1 <- CreateSeuratObject(counts = sam1, min.cells = 3, min.features = 200, project = "sam1")
+sam2 <- CreateSeuratObject(counts = sam2, min.cells= 3, min.features = 200, project ="sam2")
+```
+
+mitochondrial counts
+
+```{r}
+sam1[["percent.mt"]] <- PercentageFeatureSet(sam1, pattern = "^MT-")
+sam2[["percent.mt"]] <- PercentageFeatureSet(sam2, pattern = "^MT-")
+```
+
+View
+
+```{r}
+View(sam1@meta.data)
+View(sam2@meta.data)
+```
+
+Violin plot
+
+```{r}
+#VlnPlot(Merged_sam, features = c("nFeature_RNA","nCount_RNA","percent.mt"), ncol = 3)
+VlnPlot(sam1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+VlnPlot(sam2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+perform QC
+
+```{r}
+#Merged_sam <- subset(Merged_sam, subset = nFeature_RNA > 200 & nFeature_RNA < 6500 & percent.mt < 15 )
+sam1 <- subset(sam1, subset = nFeature_RNA > 200 & nFeature_RNA < 6500 & percent.mt < 15)
+sam2 <- subset(sam2, subset = nFeature_RNA > 200 & nFeature_RNA < 6500 & percent.mt < 15)
+```
+
+View violin plot after QC
+
+```{r}
+#VlnPlot(Merged_sam, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3 )
+VlnPlot(sam1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+VlnPlot(sam2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+Merge samples
+```{r}
+Merged_sam <- merge(sam1,sam2, add.cell.ids = c("sam1","sam2"), project = "Merged_sam")
+#rm(Merged_sam)
+```
+
+
+Pre-processing
+
+Normalization
+
+```{r}
+Merged_sam <- NormalizeData(Merged_sam)
+#sam1 <- NormalizeData(sam1)
+#sam2 <- NormalizeData(sam2)
+```
+Finding variable genes
+
+```{r}
+Merged_sam <- FindVariableFeatures(Merged_sam, selection.method =  "vst", nfeatures = 2000)
+#sam1 <- FindVariableFeatures(sam1,  selection.method = "vst", nfeatures = 2000)
+#sam2 <- FindVariableFeatures(sam2,  selection.method = "vst", nfeatures = 2000)
+```
+
+
+Scale data
+
+```{r}
+Merged_sam <- ScaleData(Merged_sam)
+#sam1 <- ScaleData(sam1)
+#sam2 <- ScaleData(sam2)
+
+```
+
+Run PCA
+
+```{r}
+Merged_sam <- RunPCA(Merged_sam)
+#sam1 <- RunPCA(sam1)
+#sam2 <- RunPCA(sam2)
+```
+
+
+
+```{r}
+DimPlot(Merged_sam, reduction = "pca") #+ NoLegend()
+DimPlot(Merged_sam, reduction = "pca", dim = c(1,5))
+```
+```{r}
+VizDimLoadings(Merged_sam, dims = 1:2, reduction = "pca")
+```
+
+
+Run Harmony Integration
+
+
+```{r}
+#install.packages('harmony')
+```
+
+```{r}
+library(harmony)
+```
+
+
+```{r}
+## Run Harmony Integration
+options(repr.plot.height = 2.5, repr.plot.width = 6)
+Merged_sam <- RunHarmony(Merged_sam,"orig.ident", plot_convergence = TRUE)
+```
+
+Run Clustering
+
+
+```{r}
+Merged_sam <- RunUMAP(Merged_sam, reduction = 'harmony', dims = 1:30,
+                           reduction.name = 'umap.harmony')
+Merged_sam <- FindNeighbors(Merged_sam, reduction = 'harmony', dims = 1:30)
+Merged_sam <- FindClusters(Merged_sam, resolution = 0.5)
+Merged_sam <- FindClusters(Merged_sam, resolution = 0.1)
+
+```
+```{r}
+DimPlot(Merged_sam, reduction ="umap.harmony", group.by = "orig.ident")
+```
+
+```{r}
+p2 <- DimPlot(
+  Merged_sam,
+  reduction = "umap.harmony",
+  group.by = c("orig.ident","RNA_snn_res.0.1"),
+  combine = FALSE, label.size = 2
+)
+p2
+```
+Joining layers
+
+```{r}
+Merged_sam <- JoinLayers(Merged_sam)
+```
+
+Finding marker genes in the clusters.
+
+```{r}
+Merged_sam.markers <- FindAllMarkers(Merged_sam, only.pos = TRUE)
+```
+
+Filtering the marker gene list to keep the most upregulated genes
+
+```{r}
+top_markers<- Merged_sam.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1)
+write.csv(top_markers, file = "top_markers.csv", row.names = FALSE)
+```
+
+
+```{r}
+#top10 <- Merged_sam.markers %>%
+ # group_by(cluster) %>%
+  #top_n(n = 1, wt = avg_log2FC)
+Merged_sam.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+
+```
+
+Plotting the upregulated genes in each cluster
+
+```{r}
+FeaturePlot(Merged_sam, features = c("S100P", "SLC11A1", "C1R", "KLRB1", "TRAC", "NUSAP1", "HLA-DQB2", "TCL1A"))
+```
+
+```{r}
+DoHeatmap(Merged_sam, features = top10$gene) + NoLegend()
+```
+
+Tryig to run SingleR on the sample clusters for cell annotation
+
+Getting normalized and raw counts
+```{r}
+raw_counts <- LayerData(Merged_sam, assay = "RNA", layer = 'counts')
+raw_counts[c("S100P", "SLC11A1", "C1R", "KLRB1", "TRAC"),1:2]
+norm_counts <- LayerData(Merged_sam, assay = "RNA", layer = 'data')
+norm_counts[c("S100P", "SLC11A1", "C1R", "KLRB1", "TRAC"),1:2]
+```
+
+Install Tidyverse and celldex
+
+```{r}
+#install.packages("tidyverse")
+#BiocManager::install("celldex")
+#library(tidyverse)
+#install.packages("ggplot2")
+library(ggplot2)
+library(celldex)
+```
+
+Get reference dataset from celldex
+
+```{r}
+ref <- celldex::HumanPrimaryCellAtlasData()
+unique(ref$label.main)
+unique(ref$label.fine)
+```
+
+install SingleR
+
+```{r}
+#BiocManager::install("SingleR")
+library(SingleR)
+```
+```{r}
+#BiocManager::install("scran")
+library(scran)
+```
+
+
+Run singleR on normalized data
+
+```{r}
+ct_ann <- SingleR(test = norm_counts, # we could also use sce or raw_counts
+                  ref = ref, 
+                  labels = ref$label.main,
+                  de.method = 'wilcox')
+```
+
+
+```{r}
+#library("magrittr")
+ct_ann %>% head()
+```
+```{r}
+unique(ct_ann$pruned.labels)
+table(ct_ann$pruned.labels)
+print("ct_ann$labels")
+table(ct_ann$labels)
+summary(is.na(ct_ann$pruned.labels))
+```
+
+```{r}
+plotScoreHeatmap(ct_ann)
+plotDeltaDistribution(ct_ann, ncol = 4, dots.on.top = FALSE)
+```
+
+```{r}
+rownames(ct_ann)[1:2] # make sure you have cell IDs
+Merged_sam<- AddMetaData(Merged_sam, ct_ann$pruned.labels, col.name = 'SingleR_HCA')
+```
+
+
+
+```{r}
+Merged_sam <- SetIdent(Merged_sam, value = "SingleR_HCA")
+DimPlot(Merged_sam, label = T , repel = T, label.size = 3) + NoLegend()
+```
+
+
